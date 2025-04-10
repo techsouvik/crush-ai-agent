@@ -273,6 +273,61 @@ class CloseBrowserTool extends StructuredTool<z.ZodUndefined> {
     }
 }
 
+const ExtractInputSchema = z.object({
+    selector: z.string().describe("CSS selector or XPath of the element(s) to extract data from."),
+    attribute: z.string().optional().describe("Optional attribute to extract (e.g., 'href', 'src'). If omitted, extracts text content."),
+    multiple: z.boolean().optional().describe("Whether to extract multiple elements matching the selector. Defaults to false."),
+    description: z.string().optional().describe("Optional description of the data to extract."),
+});
+
+class ExtractDataTool extends StructuredTool<typeof ExtractInputSchema> {
+    name = "extract_data";
+    description = "Extracts structured data from the current web page using a selector.";
+    schema = ExtractInputSchema;
+
+    protected async _call(input: z.infer<typeof ExtractInputSchema>): Promise<string> {
+        try {
+            const page = await getPage();
+            const multiple = input.multiple ?? false;
+
+            if (multiple) {
+                const elements = await page.locator(input.selector).elementHandles();
+                if (elements.length === 0) {
+                    return `No elements found matching selector "${input.selector}".`;
+                }
+
+                const results = [];
+                for (const el of elements) {
+                    const data = input.attribute
+                        ? await el.getAttribute(input.attribute)
+                        : await el.textContent();
+                    results.push(data?.trim() ?? null);
+                }
+                return JSON.stringify(results, null, 2);
+            } else {
+                const locator = page.locator(input.selector).first();
+                const count = await locator.count();
+                if (count === 0) {
+                    return `No element found matching selector "${input.selector}".`;
+                }
+                const el = await locator.elementHandle();
+                if (!el) {
+                    return `No element handle found for selector "${input.selector}".`;
+                }
+                const data = input.attribute
+                    ? await el.getAttribute(input.attribute)
+                    : await el.textContent();
+                return data?.trim() ?? `No data extracted from selector "${input.selector}".`;
+            }
+        } catch (error: any) {
+            console.error("Extract data error:", error);
+            return `Error extracting data: ${error.message}`;
+        }
+    }
+}
+
+import { SmartExtractTool } from "./smart_extract_tool";
+
 export const browserTools = [
     new NavigateTool(),
     new ClickTool(),
@@ -280,4 +335,6 @@ export const browserTools = [
     new LoginWithGoogleTool(),
     new LoginTool(),
     new CloseOverlayTool(),
+    new ExtractDataTool(),
+    new SmartExtractTool(),
 ];
